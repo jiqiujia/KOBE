@@ -68,10 +68,12 @@ def build_model(checkpoints, config, device):
         warmup_steps=config.warmup_steps,
         model_size=config.hidden_size,
     )
+    optim.set_parameters(model.parameters())
     print(optim)
     if checkpoints is not None:
-        optim = optim.optimizer.load_state_dict(checkpoints["optim"])
-    optim.set_parameters(model.parameters())
+        optim.optimizer.load_state_dict(checkpoints["optim"])
+        print(type(checkpoints['optim']), optim)
+        optim.set_parameters(model.parameters())
 
     param_count = sum([param.view(-1).size()[0] for param in model.parameters()])
     print(repr(model) + "\n\n")

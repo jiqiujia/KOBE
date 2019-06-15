@@ -1,5 +1,5 @@
 # Data
-data: 'data/baseline/preprocessed/'
+data: '../data/kobe/data/baseline/preprocessed/'
 max_time_step: 150
 shared_vocab: False
 unk: True
@@ -60,7 +60,7 @@ pool_size: 0 # Pool size of maxout layer
 
 # Others
 seed: 1234
-use_cuda: True
+use_cuda: False
 Bernoulli: False # Bernoulli selection
 gate: False # To guarantee selfatttn is working for global encoding
 selfatt: False # selfatt for both global encoding and inverse attention

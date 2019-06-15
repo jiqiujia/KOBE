@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 import torch
+import io
 
 PAD = 0
 UNK = 1
@@ -33,7 +34,7 @@ class Dict(object):
 
     # Load entries from a file.
     def loadFile(self, filename):
-        for line in open(filename):
+        for line in io.open(filename, encoding='utf-8'):
             fields = line.split()
             label = fields[0]
             idx = int(fields[1])
@@ -41,7 +42,7 @@ class Dict(object):
 
     # Write entries to a file.
     def writeFile(self, filename):
-        with open(filename, 'w') as file:
+        with io.open(filename, 'w', encoding='utf-8') as file:
             for i in range(self.size()):
                 label = self.idxToLabel[i]
                 file.write('%s %d\n' % (label, i))
