@@ -3,8 +3,8 @@ import torch
 import utils
 
 
-class Beam(object):
-    def __init__(self, size, n_best=1, cuda=True, length_norm=False, minimum_length=0):
+class TopkBeam(object):
+    def __init__(self, size, topk, n_best=1, cuda=True, length_norm=False, minimum_length=0):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -12,9 +12,6 @@ class Beam(object):
         # The score for each translation on the beam.
         self.scores = self.tt.FloatTensor(size).zero_()
         self.allScores = []
-
-        # The backpointers at each time-step. (which beam gives current best score)
-        self.prevKs = []
 
         # The outputs at each time-step.
         self.nextYs = [self.tt.LongTensor(size)
@@ -35,14 +32,18 @@ class Beam(object):
         self.length_norm = length_norm
         self.minimum_length = minimum_length
 
+        self.topk = topk
+
     def getCurrentState(self):
         "Get the outputs for the current timestep."
         return self.nextYs[-1]
 
     def getCurrentOrigin(self):
         "Get the backpointers for the current timestep."
-        return self.prevKs[-1]
+        return torch.arange(0, self.size).long()
 
+    # first topk, then topk sample
+    # 如何保证去重后有足够的beam，如何保证多样性
     def advance(self, wordLk, attnOut):
         """
         Given prob over words for every last beam `wordLk` and attention
@@ -54,9 +55,18 @@ class Beam(object):
         """
         numWords = wordLk.size(1)
 
+        sortedWordLk, indices = torch.sort(wordLk, dim=1, descending=True)
+        topWordLk = sortedWordLk[:, :self.topk]
+        topIndices = indices[:, :self.topk]
+
+        topIdx = torch.multinomial(topWordLk, 1)
+        sampledWordScore = topWordLk.gather(1, topIdx).squeeze()
+        sampledWordIdx = topIndices.gather(1, topIdx).squeeze()
+        #print(sampledWordScore.shape, sampledWordIdx.shape, sampledWordIdx.shape, attnOut.shape)
+
         # Sum the previous scores.
-        if len(self.prevKs) > 0:
-            beamLk = wordLk + self.scores.unsqueeze(1).expand_as(wordLk)
+        if len(self.allScores) > 0:
+            beamLk = sampledWordScore + self.scores
 
             # Don't let EOS have children.
             for i in range(self.nextYs[-1].size(0)):
@@ -82,23 +92,17 @@ class Beam(object):
                 if fail:
                     beamLk[j] = -1e20
         else:
-            beamLk = wordLk[0]
-        flatBeamLk = beamLk.view(-1)
-        # if len(self.prevKs) == 0:
-        #     print(flatBeamLk.size())
-        bestScores, bestScoresId = flatBeamLk.topk(self.size, 0, True, True)
+            beamLk, sampledWordIdx = wordLk[0].topk(self.size, 0, True, True)
         # if len(self.prevKs) == 0:
         #     print(bestScores.size(), bestScoresId.size())
 
         self.allScores.append(self.scores)
-        self.scores = bestScores
+        self.scores = beamLk
 
         # bestScoresId is flattened beam x word array, so calculate which
         # word and beam each score came from
-        prevK = bestScoresId / numWords
-        self.prevKs.append(prevK)
-        self.nextYs.append((bestScoresId - prevK * numWords))
-        self.attn.append(attnOut.index_select(0, prevK))
+        self.nextYs.append((sampledWordIdx))
+        self.attn.append(attnOut)
 
         for i in range(self.nextYs[-1].size(0)):
             if self.nextYs[-1][i] == self._eos:
@@ -106,7 +110,7 @@ class Beam(object):
                 if self.length_norm:
                     s /= len(self.nextYs)
                 # if len(self.nextYs) - 1 >= self.minimum_length:
-                self.finished.append((s, len(self.nextYs) - 1, i))  #score, length, beamId
+                self.finished.append((s, len(self.nextYs) - 1, i))  # score, length, beamId
 
         # End condition is when top-of-beam is EOS and no global score.
         if self.nextYs[-1][0] == utils.EOS:
@@ -174,8 +178,7 @@ class Beam(object):
         Walk back to construct the full hypothesis.
         """
         hyp, attn = [], []
-        for j in range(len(self.prevKs[:timestep]) - 1, -1, -1):
+        for j in range(len(self.nextYs[:timestep]) - 1, -1, -1):
             hyp.append(self.nextYs[j + 1][k].item())
             attn.append(self.attn[j][k])
-            k = self.prevKs[j][k].item()
         return hyp[::-1], torch.stack(attn[::-1])

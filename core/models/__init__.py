@@ -5,3 +5,4 @@ from .seq2seq import *
 from .beam import *
 from .transformer import *
 from .tensor2tensor import *
+from .topkbeam import *

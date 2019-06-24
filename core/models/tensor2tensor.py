@@ -99,6 +99,7 @@ class tensor2tensor(nn.Module):
                 config, tgt_embedding=tgt_embedding, padding_idx=tgt_padding_idx)
         # log softmax should specify dimension explicitly
         self.log_softmax = nn.LogSoftmax(dim=-1)
+        self.softmax = nn.Softmax(dim=-1)
         self.use_cuda = config.use_cuda
         self.config = config
         self.label_smoothing = label_smoothing
@@ -388,7 +389,7 @@ class tensor2tensor(nn.Module):
 
         return sample_ids, alignments
 
-    def beam_sample(self, src, src_len, knowledge, knowledge_len, beam_size=1, eval_=False):
+    def beam_sample(self, src, src_len, knowledge, knowledge_len, beam_size=1, eval_=False, n_best=1):
         """
         beam search
         :param src: source input
@@ -425,7 +426,7 @@ class tensor2tensor(nn.Module):
         def unbottle(m):
             return m.view(batch_size, beam_size, -1)
 
-        beam = [models.Beam(beam_size, n_best=1,
+        beam = [models.Beam(beam_size, n_best=n_best,
                             cuda=self.use_cuda, length_norm=self.config.length_norm)
                 for __ in range(batch_size)]    # [batch, beam]
 
@@ -455,9 +456,9 @@ class tensor2tensor(nn.Module):
             else:
                 output, attn, state = self.decoder(
                     inp, contexts, state, step=i)   # [len, batch*beam, size]
-            output = self.compute_score(output.transpose(0, 1)).squeeze(1)  # [batch*beam, size]
+            output = self.compute_score(output.transpose(0, 1)).squeeze(1)  # [batch*beam, voc_size]
 
-            output = unbottle(self.log_softmax(output)) # [batch, beam, size]
+            output = unbottle(self.log_softmax(output)) # [batch, beam, voc_size]
             attn = unbottle(attn.squeeze(0))    # [batch, beam, k_len]
 
             select_indices_array = []
@@ -480,7 +481,6 @@ class tensor2tensor(nn.Module):
 
         for j in ind:
             b = beam[j]
-            n_best = 1
             scores, ks = b.sortFinished(minimum=n_best)
             hyps, attn = [], []
             if eval_:
@@ -491,11 +491,123 @@ class tensor2tensor(nn.Module):
                 attn.append(att.max(1)[1])
                 if eval_:
                     weight.append(att)
-            allHyps.append(hyps[0])
-            allScores.append(scores[0])
-            allAttn.append(attn[0])
+            allHyps.append(hyps)
+            allScores.append(scores)
+            allAttn.append(attn)
             if eval_:
-                allWeight.append(weight[0])
+                allWeight.append(weight)
+        if eval_:
+            return allHyps, allAttn, allWeight
+
+        return allHyps, allAttn
+
+    def topk_sample(self, src, src_len, knowledge, knowledge_len, beam_size=1, eval_=False, n_best=1, topk=1):
+        """
+                beam search
+                :param src: source input
+                :param src_len: source length
+                :param beam_size: beam size
+                :param eval_: evaluation or not
+                :return: prediction, attention max score and attention weights
+                """
+        lengths, indices = torch.sort(src_len, dim=0, descending=True)  # [batch]
+        _, ind = torch.sort(indices)
+        src = torch.index_select(src, dim=0, index=indices)  # [batch, len]
+        src = src.t()  # [len, batch]
+        batch_size = src.size(1)
+
+        if self.config.knowledge:
+            knowledge = knowledge.t()
+
+        if self.config.positional:
+            if self.config.knowledge:
+                mask = (knowledge.t() != 0).float()
+                knowledge_contexts = self.knowledge_encoder(knowledge, is_knowledge=True).transpose(0, 1)
+            contexts = self.encoder(src, src_len.tolist())  # [len, batch, size]
+            if self.config.knowledge:
+                contexts = contexts.transpose(0, 1)
+                contexts = self.encoder.condition_context_attn(contexts, knowledge_contexts, mask)
+                contexts = self.encoder.bi_attn_transform(contexts)
+                contexts = contexts.transpose(0, 1)
+        else:
+            contexts, state = self.encoder(src, lengths.tolist())  # [len, batch, size]
+
+        def bottle(m):
+            return m.view(batch_size * beam_size, -1)
+
+        def unbottle(m):
+            return m.view(batch_size, beam_size, -1)
+
+        beam = [models.TopkBeam(beam_size, topk, n_best=n_best,
+                            cuda=self.use_cuda, length_norm=self.config.length_norm)
+                for __ in range(batch_size)]  # [batch, beam]
+
+        contexts = tile(contexts, beam_size, 1)  # [len, batch*beam, size]
+        src = tile(src, beam_size, 1)  # [len, batch*beam]
+
+        if not self.config.positional:
+            h = tile(state[0], beam_size, 0)
+            c = tile(state[1], beam_size, 0)
+            state = (h, c)  # [len, batch*beam, size]
+
+        # self.decoder.init_state(src, contexts)
+        models.transformer.init_state(self.decoder, src, contexts, self.decoder.num_layers)
+
+        # sequential generation
+        for i in range(self.config.max_time_step):
+            # finish beam search
+            if all((b.done() for b in beam)):
+                break
+
+            inp = torch.stack([b.getCurrentState() for b in beam])
+            inp = inp.view(1, -1)  # [1, batch*beam]
+
+            if self.config.positional:
+                output, attn = self.decoder(inp, contexts, step=i)  # [len, batch*beam, size]
+                state = None
+            else:
+                output, attn, state = self.decoder(
+                    inp, contexts, state, step=i)  # [len, batch*beam, size]
+            output = self.compute_score(output.transpose(0, 1)).squeeze(1)  # [batch*beam, voc_size]
+
+            output = unbottle(self.softmax(output))  # [batch, beam, voc_size]
+            attn = unbottle(attn.squeeze(0))  # [batch, beam, k_len]
+
+            select_indices_array = []
+            # scan beams in a batch
+            for j, b in enumerate(beam):
+                # update each beam
+                b.advance(output[j, :], attn[j, :])  # batch index
+                select_indices_array.append(
+                    b.getCurrentOrigin() + j * beam_size)
+            select_indices = torch.cat(select_indices_array)
+            self.decoder.map_state(
+                lambda state, dim: state.index_select(dim, select_indices))
+            if state is not None:
+                state = (state[0].index_select(0, select_indices),
+                         state[1].index_select(0, select_indices))
+
+        allHyps, allScores, allAttn = [], [], []
+        if eval_:
+            allWeight = []
+
+        for j in ind:
+            b = beam[j]
+            scores, ks = b.sortFinished(minimum=n_best)
+            hyps, attn = [], []
+            if eval_:
+                weight = []
+            for i, (times, k) in enumerate(ks[:n_best]):
+                hyp, att = b.getHyp(times, k)
+                hyps.append(hyp)
+                attn.append(att.max(1)[1])
+                if eval_:
+                    weight.append(att)
+            allHyps.append(hyps)
+            allScores.append(scores)
+            allAttn.append(attn)
+            if eval_:
+                allWeight.append(weight)
         if eval_:
             return allHyps, allAttn, allWeight
 

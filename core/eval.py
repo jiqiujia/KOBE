@@ -43,42 +43,53 @@ if __name__ == "__main__":
     model, optim = train.build_model(checkpoints, config, 'cpu')
     model.eval()
 
-    testCats = ['food', 'baby', 'beauty', 'shoe', 'daily', 'luggage', 'appliance', 'jiaju']
-    with io.open("E:/projects/AiProductDescWriter/server_data/food/testdata/JDTestTitles.txt", encoding='utf-8') as fin, \
-        io.open("aiProductTest.txt", 'w+', encoding='utf-8') as fout:
-        srcList = []
-        srcIdList = []
-        srcLenList = []
+    testCats = ['cloth', 'food', 'baby', 'beauty', 'shoe', 'daily', 'luggage', 'appliance', 'jiaju']
+    # testCats = ['cloth']
+    with io.open("aiProductTest.txt", 'w+', encoding='utf-8') as fout:
+        for testCat in testCats:
+            with io.open("E:/projects/AiProductDescWriter/server_data/{}/testdata/JDTestTitles.txt".format(testCat),
+                    encoding='utf-8') as fin:
+                srcList = []
+                srcIdList = []
+                srcLenList = []
 
-        batch_size = 10
-        for line in fin.readlines():
-            line = line.strip()
-            chars = [c for c in line]
-            ids = src_vocab.convertToIdx(chars, dict_helper.UNK_WORD)
-            #print(chars, ids)
+                batch_size = 10
+                for line in fin.readlines():
+                    line = line.strip()
+                    chars = [c for c in line]
+                    ids = src_vocab.convertToIdx(chars, dict_helper.UNK_WORD)
+                    # print(chars, ids)
 
-            srcList.append(line)
-            srcIdList.append(ids)
-            srcLenList.append(len(ids))
+                    srcList.append(line)
+                    srcIdList.append(ids)
+                    srcLenList.append(len(ids))
 
-        resList = []
-        addOne = 1 if (len(srcList) % batch_size) else 0
-        for i in range(len(srcList) // batch_size + addOne):
-            print("batch ", i)
-            startIdx = i * batch_size
-            endIdx = min((i+1)*batch_size, len(srcList))
+                # srcList = srcList[:2]
+                resList = []
+                addOne = 1 if (len(srcList) % batch_size) else 0
+                for i in range(len(srcList) // batch_size + addOne):
+                    print("batch ", i)
+                    startIdx = i * batch_size
+                    endIdx = min((i + 1) * batch_size, len(srcList))
 
-            xs = srcIdList[startIdx:endIdx]
-            maxLen = max(len(x) for x in xs)
-            xs = [x + [0]*(maxLen - len(x)) for x in xs]
+                    xs = srcIdList[startIdx:endIdx]
+                    maxLen = max(len(x) for x in xs)
+                    xs = [x + [0] * (maxLen - len(x)) for x in xs]
 
-            with torch.no_grad():
-                samples, alignment = model.beam_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]), None, None, beam_size=10)
-                candidates = [''.join(tgt_vocab.convertToLabels(s, utils.EOS)) for s in samples]
-                for candidate in candidates:
-                    resList.append(candidate)
+                    with torch.no_grad():
+                        # samplesBatch, alignmentsBatch = model.beam_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]),
+                        #                                        None, None, beam_size=10, n_best=100)
+                        samplesBatch, alignmentsBatch = model.topk_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]),
+                                                               None, None, beam_size=20, n_best=10, topk=10)
+                        # samples, alignment = model.sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]), None, None)
+                        for samples in samplesBatch:
+                            candidates = [''.join(tgt_vocab.convertToLabels(s, utils.EOS)) for s in samples]
+                            resList.append(candidates)
 
-        for src, res in zip(srcList, resList):
-            fout.write(src +'\t'+ res)
+                for src, res in zip(srcList, resList):
+                    fout.write(src + '\n')
+                    for desc in res:
+                        fout.write("\t"+desc+"\n")
+                    fout.write("\n")
 
-        fout.write("\n####################################\n\n")
+                fout.write("\n####################################\n\n")
