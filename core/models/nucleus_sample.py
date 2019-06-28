@@ -3,8 +3,8 @@ import torch
 import utils
 
 
-class TopkBeam(object):
-    def __init__(self, size, topk, n_best=1, cuda=True, length_norm=False, minimum_length=0):
+class NucleusSample(object):
+    def __init__(self, size, topp, n_best=1, cuda=True, length_norm=False, minimum_length=0):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -15,8 +15,8 @@ class TopkBeam(object):
 
         # The outputs at each time-step.
         self.nextYs = [self.tt.LongTensor(size)
-                           .fill_(utils.PAD)]
-        self.nextYs[0][0] = utils.BOS
+                           .fill_(utils.BOS)]
+        # self.nextYs[0][0] = utils.BOS
 
         # Has EOS topped the beam yet.
         self._eos = utils.EOS
@@ -32,7 +32,7 @@ class TopkBeam(object):
         self.length_norm = length_norm
         self.minimum_length = minimum_length
 
-        self.topk = topk
+        self.topp = topp
 
     def getCurrentState(self):
         "Get the outputs for the current timestep."
@@ -53,11 +53,20 @@ class TopkBeam(object):
         * `attnOut`- attention at the last step
         Returns: True if beam search is complete.
         """
-        numWords = wordLk.size(1)
+
+
 
         sortedWordLk, indices = torch.sort(wordLk, dim=1, descending=True)
-        topWordLk = sortedWordLk[:, :self.topk]
-        topIndices = indices[:, :self.topk]
+
+        # 小于1时用nucleus sample，否则用topk sample
+        if self.topp < 1.0:
+            cumSumWordLk = torch.cumsum(sortedWordLk, dim=1)
+            topWordLk = torch.where(cumSumWordLk < self.topp, sortedWordLk, torch.ones_like(sortedWordLk) * 1e-10)
+            topIndices = indices
+        else:
+            sortedWordLk, indices = torch.sort(wordLk, dim=1, descending=True)
+            topWordLk = sortedWordLk[:, :self.topp]
+            topIndices = indices[:, :self.topp]
 
         topIdx = torch.multinomial(topWordLk, 1)
         sampledWordScore = topWordLk.gather(1, topIdx).squeeze()

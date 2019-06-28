@@ -18,8 +18,8 @@ class Beam(object):
 
         # The outputs at each time-step.
         self.nextYs = [self.tt.LongTensor(size)
-                           .fill_(utils.PAD)]
-        self.nextYs[0][0] = utils.BOS
+                           .fill_(utils.BOS)]
+        # self.nextYs[0][0] = utils.BOS
 
         # Has EOS topped the beam yet.
         self._eos = utils.EOS

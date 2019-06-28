@@ -43,11 +43,11 @@ if __name__ == "__main__":
     model, optim = train.build_model(checkpoints, config, 'cpu')
     model.eval()
 
-    testCats = ['cloth', 'food', 'baby', 'beauty', 'shoe', 'daily', 'luggage', 'appliance', 'jiaju']
+    testCats = ['cloth']#, 'food', 'baby', 'beauty', 'shoe', 'daily', 'luggage', 'appliance', 'jiaju']
     # testCats = ['cloth']
     with io.open("aiProductTest.txt", 'w+', encoding='utf-8') as fout:
         for testCat in testCats:
-            with io.open("E:/projects/AiProductDescWriter/server_data/{}/testdata/JDTestTitles.txt".format(testCat),
+            with io.open("E:/projects/AiProductDescWriter/server_data/{}/testdata/zhuji.txt".format(testCat),
                     encoding='utf-8') as fin:
                 srcList = []
                 srcIdList = []
@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
                 batch_size = 10
                 for line in fin.readlines():
-                    line = line.strip()
+                    line = line.strip().split("\t")[-1]
                     chars = [c for c in line]
                     ids = src_vocab.convertToIdx(chars, dict_helper.UNK_WORD)
                     # print(chars, ids)
@@ -79,8 +79,8 @@ if __name__ == "__main__":
                     with torch.no_grad():
                         # samplesBatch, alignmentsBatch = model.beam_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]),
                         #                                        None, None, beam_size=10, n_best=100)
-                        samplesBatch, alignmentsBatch = model.topk_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]),
-                                                               None, None, beam_size=20, n_best=10, topk=10)
+                        samplesBatch, alignmentsBatch = model.nucleus_sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]),
+                                                               None, None, beam_size=20, n_best=10, topk=10, temperature=1)
                         # samples, alignment = model.sample(torch.tensor(xs), torch.tensor(srcLenList[startIdx:endIdx]), None, None)
                         for samples in samplesBatch:
                             candidates = [''.join(tgt_vocab.convertToLabels(s, utils.EOS)) for s in samples]

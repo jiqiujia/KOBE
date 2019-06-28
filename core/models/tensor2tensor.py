@@ -501,7 +501,7 @@ class tensor2tensor(nn.Module):
 
         return allHyps, allAttn
 
-    def topk_sample(self, src, src_len, knowledge, knowledge_len, beam_size=1, eval_=False, n_best=1, topk=1):
+    def nucleus_sample(self, src, src_len, knowledge, knowledge_len, beam_size=1, eval_=False, n_best=1, topk=1, temperature=1):
         """
                 beam search
                 :param src: source input
@@ -538,7 +538,7 @@ class tensor2tensor(nn.Module):
         def unbottle(m):
             return m.view(batch_size, beam_size, -1)
 
-        beam = [models.TopkBeam(beam_size, topk, n_best=n_best,
+        beam = [models.NucleusSample(beam_size, topk, n_best=n_best,
                             cuda=self.use_cuda, length_norm=self.config.length_norm)
                 for __ in range(batch_size)]  # [batch, beam]
 
@@ -570,7 +570,10 @@ class tensor2tensor(nn.Module):
                     inp, contexts, state, step=i)  # [len, batch*beam, size]
             output = self.compute_score(output.transpose(0, 1)).squeeze(1)  # [batch*beam, voc_size]
 
-            output = unbottle(self.softmax(output))  # [batch, beam, voc_size]
+            if temperature != 1:
+                output = unbottle(self.softmax(output / temperature))
+            else:
+                output = unbottle(self.softmax(output))  # [batch, beam, voc_size]
             attn = unbottle(attn.squeeze(0))  # [batch, beam, k_len]
 
             select_indices_array = []
