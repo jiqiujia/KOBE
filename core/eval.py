@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # testCats = ['cloth']
     with io.open("aiProductTest.txt", 'w+', encoding='utf-8') as fout:
         for testCat in testCats:
-            with io.open("E:/projects/AiProductDescWriter/server_data/{}/testdata/zhuji.txt".format(testCat),
+            with io.open("test.txt".format(testCat),
                     encoding='utf-8') as fin:
                 srcList = []
                 srcIdList = []
