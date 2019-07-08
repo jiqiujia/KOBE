@@ -36,8 +36,12 @@ class Dict(object):
     def loadFile(self, filename):
         for line in io.open(filename, encoding='utf-8'):
             fields = line.split()
-            label = fields[0]
-            idx = int(fields[1])
+            if len(fields) < 2:
+                label = ' '
+                idx = int(fields[0])
+            else:
+                label = fields[0]
+                idx = int(fields[1])
             self.add(label, idx)
 
     # Write entries to a file.

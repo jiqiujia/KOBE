@@ -25,7 +25,7 @@ parser.add_argument('--tgt_trun', type=int, default=0,
                     help="Truncate target sequence length")
 parser.add_argument('--src_char', action='store_true',
                     help='character based encoding')
-parser.add_argument('-tgt_char', action='store_true',
+parser.add_argument('--tgt_char', action='store_true',
                     help='character based decoding')
 parser.add_argument('--src_dict', help='')
 parser.add_argument('--tgt_dict', help='')
@@ -67,11 +67,13 @@ def makeVocabulary(filename, trun_length, filter_length, char, vocab, size, freq
 
     print('Max length of %s = %d' % (filename, max_length))
 
+    originalSize = vocab.size()
     if size > 0:
-        originalSize = vocab.size()
         vocab = vocab.prune(size, freq)
-        print('Created dictionary of size %d (pruned from %d)' %
-              (vocab.size(), originalSize))
+    else:
+        vocab = vocab.prune(originalSize, freq)
+    print('Created dictionary of size %d (pruned from %d)' %
+          (vocab.size(), originalSize))
 
     return vocab
 
