@@ -58,6 +58,7 @@ if __name__ == "__main__":
                     line = line.strip().split("\t")[-1]
                     chars = [c for c in line]
                     ids = src_vocab.convertToIdx(chars, dict_helper.UNK_WORD)
+                    ids = ids[::-1] # 由于训练时反转了，这里也需要反转，见data_helper的padding函数
                     # print(chars, ids)
 
                     srcList.append(line)

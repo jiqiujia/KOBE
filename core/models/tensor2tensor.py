@@ -4,6 +4,9 @@ import torch.nn.functional as F
 
 import models
 import utils
+from utils import metrics
+
+import numpy as np
 
 # from fairseq import bleu
 # from utils.reward_provider import CTRRewardProvider
