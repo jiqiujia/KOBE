@@ -1,5 +1,5 @@
 # Data
-data: '../data/kobe/data/mybaseline/preprocessed/'
+data: '../data/kobe/data/mybaseline_word_v2/preprocessed/'
 max_time_step: 150
 shared_vocab: False
 unk: True
@@ -36,6 +36,7 @@ schesamp: False # Scheduled sampling
 model: 'tensor2tensor'
 ## Transformer
 positional: True
+embed_only: True
 heads: 8
 d_ff: 2048
 ## RNN

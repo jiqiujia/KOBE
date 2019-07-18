@@ -187,6 +187,10 @@ class TransformerEncoder(nn.Module):
         # HACK: 512 for word embeddings, 512 for condition embeddings
         self.embedding = nn.Embedding(config.src_vocab_size, config.emb_size,
                                       padding_idx=padding_idx)
+
+        if self.config.embed_only:
+            print("embed only encoding")
+
         # positional encoding
         if config.positional:
             self.position_embedding = PositionalEncoding(
@@ -225,6 +229,9 @@ class TransformerEncoder(nn.Module):
             conditions_1 = conditions_1.unsqueeze(0) # 1 X batch_size
             conditions_2 = conditions_2.unsqueeze(0) # 1 X batch_size
         embed = self.embedding(src)
+
+        if self.config.embed_only:
+            return embed
 
         # RNN for positional information
         if self.config.positional:
